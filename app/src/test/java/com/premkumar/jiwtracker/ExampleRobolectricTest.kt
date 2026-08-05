@@ -38,9 +38,8 @@ class ExampleRobolectricTest {
     assertNotNull(viewModel)
     
     // Test preference default reading
-    assertNotNull(viewModel.isDarkTheme.value)
-    assertNotNull(viewModel.isVoiceEnabled.value)
-    assertNotNull(viewModel.isAudioEnabled.value)
+    assertNotNull(viewModel.isOnboardingCompleted.value)
+    assertNotNull(viewModel.weeklyWalkGoal.value)
     assertNotNull(viewModel.userWeight.value)
     
     // Simulate starting a workout from user presets

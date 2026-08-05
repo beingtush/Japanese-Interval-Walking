@@ -13,8 +13,8 @@ android {
     applicationId = "com.premkumar.jiwtracker"
     minSdk = 26
     targetSdk = 36
-    versionCode = 5
-    versionName = (project.findProperty("versionName") as String?) ?: "2.1.0"
+    versionCode = 6
+    versionName = (project.findProperty("versionName") as String?) ?: "2.2.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -78,41 +78,7 @@ android {
 }
 
 // Dynamic artifact naming: jiw-tracker-v<versionName>.apk / .aab
-val versionNameValue = (project.findProperty("versionName") as String?) ?: "2.1.0"
-
-fun renameApks(apkDir: java.io.File) {
-  if (!apkDir.exists()) return
-  apkDir.listFiles { f -> f.name.endsWith(".apk") && f.name != "jiw-tracker-v${versionNameValue}.apk" }
-    ?.forEach { apk ->
-      apk.renameTo(java.io.File(apkDir, "jiw-tracker-v${versionNameValue}.apk"))
-    }
-}
-
-fun renameBundles(bundleDir: java.io.File) {
-  if (!bundleDir.exists()) return
-  bundleDir.listFiles { f -> f.name.endsWith(".aab") && f.name != "jiw-tracker-v${versionNameValue}.aab" }
-    ?.forEach { aab ->
-      aab.renameTo(java.io.File(bundleDir, "jiw-tracker-v${versionNameValue}.aab"))
-    }
-}
-
-afterEvaluate {
-  tasks.matching { it.name.startsWith("assemble") && it.name.endsWith("Release") }
-    .configureEach { task ->
-      val flavor = task.name.removePrefix("assemble").removeSuffix("Release").lowercase()
-      task.doLast {
-        renameApks(layout.buildDirectory.dir("outputs/apk/${flavor}/release").get().asFile)
-      }
-    }
-
-  tasks.matching { it.name.startsWith("bundle") && it.name.endsWith("Release") }
-    .configureEach { task ->
-      val flavor = task.name.removePrefix("bundle").removeSuffix("Release").lowercase()
-      task.doLast {
-        renameBundles(layout.buildDirectory.dir("outputs/bundle/${flavor}/release").get().asFile)
-      }
-    }
-}
+val versionNameValue = (project.findProperty("versionName") as String?) ?: "2.2.0"
 
 kotlin {
   compilerOptions {

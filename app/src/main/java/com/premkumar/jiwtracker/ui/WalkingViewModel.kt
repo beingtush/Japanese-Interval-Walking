@@ -54,23 +54,6 @@ class WalkingViewModel(
             onboardingPrefs.setOnboardingCompleted(completed)
             if (completed) {
                 com.premkumar.jiwtracker.data.OnboardingAnalytics.logEvent("onboarding_completed")
-                if (!onboardingPrefs.hasSeededSession0.first()) {
-                    val session0 = com.premkumar.jiwtracker.data.WalkingSession(
-                        dateMillis = System.currentTimeMillis(),
-                        durationSeconds = 0L,
-                        steps = 0,
-                        calories = 0.0,
-                        avgCadence = 0.0,
-                        avgPace = 0.0,
-                        slowCyclesCount = 0,
-                        fastCyclesCount = 0,
-                        totalCycles = 0,
-                        isSyncedToGoogleFit = false,
-                        isSyncedToHealthConnect = false
-                    )
-                    repository.insertSession(session0)
-                    onboardingPrefs.setSeededSession0(true)
-                }
             } else {
                 com.premkumar.jiwtracker.data.OnboardingAnalytics.logEvent("onboarding_started")
             }

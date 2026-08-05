@@ -363,10 +363,17 @@ fun DashboardScreen(
         containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier
     ) { innerPadding ->
+        val navBottomPadding = innerPadding.calculateBottomPadding()
+        val bottomPadding = if (navBottomPadding > 0.dp) {
+            navBottomPadding + 16.dp
+        } else {
+            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(top = innerPadding.calculateTopPadding())
         ) {
             // Screen rendering navigation
             val state = currentServiceState
@@ -394,15 +401,16 @@ fun DashboardScreen(
                     viewModel.healthConnectPermissionManager.launchPermissionRequestSafely(hcPermissionLauncher)
                 }
                 when (selectedTab) {
-                    0 -> TrainTabScreen(viewModel, isJp, onPermissionRequest = { permissionsGrantedAlert = true })
-                    1 -> DashboardStatsTabScreen(viewModel, isJp, historyLog, isInternetOnline, onInternetToggle = { isInternetOnline = !isInternetOnline }, onConnectHc = onConnectHealthConnect)
-                    2 -> TechniqueTabScreen(isJp)
+                    0 -> TrainTabScreen(viewModel, isJp, onPermissionRequest = { permissionsGrantedAlert = true }, bottomPadding = bottomPadding)
+                    1 -> DashboardStatsTabScreen(viewModel, isJp, historyLog, isInternetOnline, onInternetToggle = { isInternetOnline = !isInternetOnline }, onConnectHc = onConnectHealthConnect, bottomPadding = bottomPadding)
+                    2 -> TechniqueTabScreen(isJp, bottomPadding = bottomPadding)
                     3 -> SettingsTabScreen(
                         viewModel = viewModel,
                         isJp = isJp,
                         onConnectHc = onConnectHealthConnect,
                         onNavigateToDashboard = { selectedTab = 1 },
-                        onNavigateToAbout = { showAboutScreen = true }
+                        onNavigateToAbout = { showAboutScreen = true },
+                        bottomPadding = bottomPadding
                     )
                 }
             }
@@ -451,7 +459,8 @@ fun DashboardScreen(
 fun TrainTabScreen(
     viewModel: WalkingViewModel,
     isJp: Boolean,
-    onPermissionRequest: () -> Unit
+    onPermissionRequest: () -> Unit,
+    bottomPadding: Dp = 30.dp
 ) {
     val context = LocalContext.current
     val selectedPresetIndex by viewModel.selectedPresetIndex.collectAsStateWithLifecycle()
@@ -509,7 +518,7 @@ fun TrainTabScreen(
             .fillMaxSize()
             .padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(bottom = 30.dp, top = 10.dp)
+        contentPadding = PaddingValues(bottom = bottomPadding, top = 10.dp)
     ) {
         item {
             // Nike Run style bold header
@@ -673,7 +682,8 @@ fun DashboardStatsTabScreen(
     history: List<WalkingSession>,
     isInternetOnline: Boolean,
     onInternetToggle: () -> Unit,
-    onConnectHc: () -> Unit
+    onConnectHc: () -> Unit,
+    bottomPadding: Dp = 30.dp
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -717,7 +727,7 @@ fun DashboardStatsTabScreen(
             .fillMaxSize()
             .padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(bottom = 30.dp, top = 10.dp)
+        contentPadding = PaddingValues(bottom = bottomPadding, top = 10.dp)
     ) {
         item {
             // Dashboard bold title
@@ -735,7 +745,7 @@ fun DashboardStatsTabScreen(
             )
         }
 
-        // FEATURE 1: Onboarding-seeded weekly goal ring
+        // FEATURE 1: Weekly goal ring
         item {
             val percent = (weeklyCount * 100 / weeklyWalkGoal).coerceAtMost(100)
             val encouragingLabel = if (isJp) "すでに${percent}%達成しています！" else "You're already ${percent}% there!"
@@ -1489,7 +1499,7 @@ fun valueFormatted(num: Double, digits: Int): String {
 // TAB 2: METICULOUS PRACTICE GUIDE (SCIENCE)
 // ==========================================
 @Composable
-fun TechniqueTabScreen(isJp: Boolean) {
+fun TechniqueTabScreen(isJp: Boolean, bottomPadding: Dp = 30.dp) {
     var expandedIndex by remember { mutableStateOf(-1) }
 
     val chapters = listOf(
@@ -1589,7 +1599,7 @@ fun TechniqueTabScreen(isJp: Boolean) {
             .fillMaxSize()
             .padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(bottom = 30.dp, top = 10.dp)
+        contentPadding = PaddingValues(bottom = bottomPadding, top = 10.dp)
     ) {
         item {
             Text(
@@ -1706,7 +1716,8 @@ fun SettingsTabScreen(
     isJp: Boolean,
     onConnectHc: () -> Unit,
     onNavigateToDashboard: () -> Unit,
-    onNavigateToAbout: () -> Unit
+    onNavigateToAbout: () -> Unit,
+    bottomPadding: Dp = 30.dp
 ) {
     val context = LocalContext.current
     
@@ -1747,7 +1758,7 @@ fun SettingsTabScreen(
             .fillMaxSize()
             .padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
-        contentPadding = PaddingValues(bottom = 30.dp, top = 10.dp)
+        contentPadding = PaddingValues(bottom = bottomPadding, top = 10.dp)
     ) {
         item {
             Text(
