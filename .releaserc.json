@@ -30,11 +30,11 @@
       {
         "assets": [
           {
-            "path": "app/build/outputs/apk/release/jiw-tracker-v*.apk",
+            "path": "app/build/outputs/apk/**/*.apk",
             "label": "JIW Tracker APK (${nextRelease.version})"
           },
           {
-            "path": "app/build/outputs/bundle/release/jiw-tracker-v*.aab",
+            "path": "app/build/outputs/bundle/**/*.aab",
             "label": "JIW Tracker AAB (${nextRelease.version})"
           }
         ]

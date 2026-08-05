@@ -82,9 +82,9 @@ jobs:
         if: steps.version.outputs.release_needed == 'true'
         run: |
           echo "=== APK Outputs ==="
-          ls -la app/build/outputs/apk/release/
+          find app/build/outputs/apk/ -type f || true
           echo "=== AAB Outputs ==="
-          ls -la app/build/outputs/bundle/release/
+          find app/build/outputs/bundle/ -type f || true
 
       - name: Run semantic-release
         if: steps.version.outputs.release_needed == 'true'
