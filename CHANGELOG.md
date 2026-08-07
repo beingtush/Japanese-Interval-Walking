@@ -1,3 +1,11 @@
+# [2.3.0](https://github.com/premkumar-1122/Japanese-Interval-Walking/compare/v2.2.0...v2.3.0) (2026-08-07)
+
+
+### Features
+
+* add 5-second prepare phase, low-latency SoundPool audio cues, mutual-exclusive audio settings, and session mute pill ([eed789c](https://github.com/premkumar-1122/Japanese-Interval-Walking/commit/eed789c621ac27d8e2e43610445b9f61ef99a5f5))
+* add prepare timer, SoundPool audio cues, mutually exclusive audio modes, and session mute pill ([a93d2c4](https://github.com/premkumar-1122/Japanese-Interval-Walking/commit/a93d2c49ed660daa3a2f28a458003af474809338))
+
 # [2.2.0](https://github.com/premkumar-1122/Japanese-Interval-Walking/compare/v2.1.2...v2.2.0) (2026-08-05)
 
 
