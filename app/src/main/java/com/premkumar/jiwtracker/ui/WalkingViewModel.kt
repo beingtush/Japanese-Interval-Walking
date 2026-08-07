@@ -16,6 +16,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
+/** Mutually exclusive audio feedback mode for the walking session. */
+enum class AudioMode { VOICE, BEEP, NONE }
+
 class WalkingViewModel(
     application: Application,
     private val repository: WalkingRepository
@@ -112,11 +115,39 @@ class WalkingViewModel(
     private val _isWeightUnitKg = MutableStateFlow(sharedPrefs.getBoolean("pref_is_weight_unit_kg", true))
     val isWeightUnitKg: StateFlow<Boolean> = _isWeightUnitKg.asStateFlow()
 
-    private val _isVoiceEnabled = MutableStateFlow(sharedPrefs.getBoolean("pref_is_voice_enabled", true))
-    val isVoiceEnabled: StateFlow<Boolean> = _isVoiceEnabled.asStateFlow()
+    // Mutually exclusive audio mode — replaces legacy independent voice/audio booleans.
+    // Migration: on first run with old prefs, convert to the new enum key.
+    private val _audioMode: MutableStateFlow<AudioMode> = MutableStateFlow(run {
+        if (sharedPrefs.contains("pref_audio_mode")) {
+            try { AudioMode.valueOf(sharedPrefs.getString("pref_audio_mode", "VOICE")!!) } catch (_: Throwable) { AudioMode.VOICE }
+        } else {
+            // Migrate from legacy boolean prefs
+            val voiceWasOn = sharedPrefs.getBoolean("pref_is_voice_enabled", true)
+            val audioWasOn = sharedPrefs.getBoolean("pref_is_audio_enabled", true)
+            val migrated = when {
+                voiceWasOn -> AudioMode.VOICE
+                audioWasOn -> AudioMode.BEEP
+                else -> AudioMode.NONE
+            }
+            sharedPrefs.edit()
+                .putString("pref_audio_mode", migrated.name)
+                .remove("pref_is_voice_enabled")
+                .remove("pref_is_audio_enabled")
+                .apply()
+            migrated
+        }
+    })
+    val audioMode: StateFlow<AudioMode> = _audioMode.asStateFlow()
 
-    private val _isAudioEnabled = MutableStateFlow(sharedPrefs.getBoolean("pref_is_audio_enabled", true))
-    val isAudioEnabled: StateFlow<Boolean> = _isAudioEnabled.asStateFlow()
+    // Derived convenience getters for backward compatibility with service companion sync
+    val isVoiceEnabled: StateFlow<Boolean> = _audioMode.map { it == AudioMode.VOICE }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, _audioMode.value == AudioMode.VOICE)
+    val isAudioEnabled: StateFlow<Boolean> = _audioMode.map { it == AudioMode.BEEP }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, _audioMode.value == AudioMode.BEEP)
+
+    // Session-only mute toggle — not persisted, resets every new session
+    private val _isSessionMuted = MutableStateFlow(false)
+    val isSessionMuted: StateFlow<Boolean> = _isSessionMuted.asStateFlow()
 
     // 0 = System, 1 = Light, 2 = Dark
     private val _themeMode = MutableStateFlow(
@@ -218,8 +249,10 @@ class WalkingViewModel(
         WalkingForegroundService.slowDurationMinutes = _customSlowMinutes.value
         WalkingForegroundService.fastDurationMinutes = _customFastMinutes.value
         WalkingForegroundService.selectedCycles = _customCycles.value
-        WalkingForegroundService.isVoiceEnabled = _isVoiceEnabled.value
-        WalkingForegroundService.isAudioEnabled = _isAudioEnabled.value
+        WalkingForegroundService.isVoiceEnabled = _audioMode.value == AudioMode.VOICE
+        WalkingForegroundService.isAudioEnabled = _audioMode.value == AudioMode.BEEP
+        WalkingForegroundService.audioModeName = _audioMode.value.name
+        WalkingForegroundService.isSessionMuted = _isSessionMuted.value
         WalkingForegroundService.userWeightKg = _userWeight.value
         WalkingForegroundService.isJpLanguage = _isJpLanguage.value
     }
@@ -227,14 +260,19 @@ class WalkingViewModel(
     // Command APIs triggered by UI layout
     fun startWorkout(slowMin: Int, fastMin: Int, cycles: Int, preset: String) {
         val app = getApplication<Application>()
+
+        // Reset session-only mute on every new workout start
+        _isSessionMuted.value = false
         
         WalkingForegroundService.slowDurationMinutes = slowMin
         WalkingForegroundService.fastDurationMinutes = fastMin
         WalkingForegroundService.selectedCycles = cycles
         WalkingForegroundService.presetName = preset
         WalkingForegroundService.userWeightKg = _userWeight.value
-        WalkingForegroundService.isVoiceEnabled = _isVoiceEnabled.value
-        WalkingForegroundService.isAudioEnabled = _isAudioEnabled.value
+        WalkingForegroundService.isVoiceEnabled = _audioMode.value == AudioMode.VOICE
+        WalkingForegroundService.isAudioEnabled = _audioMode.value == AudioMode.BEEP
+        WalkingForegroundService.audioModeName = _audioMode.value.name
+        WalkingForegroundService.isSessionMuted = false
         WalkingForegroundService.isJpLanguage = _isJpLanguage.value
 
         val intent = Intent(app, WalkingForegroundService::class.java).apply {
@@ -319,18 +357,31 @@ class WalkingViewModel(
         sharedPrefs.edit().putBoolean("pref_is_weight_unit_kg", next).apply()
     }
 
-    fun toggleVoice() {
-        val next = !_isVoiceEnabled.value
-        _isVoiceEnabled.value = next
-        sharedPrefs.edit().putBoolean("pref_is_voice_enabled", next).apply()
+    /** Set the mutually exclusive audio feedback mode and persist it. */
+    fun setAudioMode(mode: AudioMode) {
+        _audioMode.value = mode
+        sharedPrefs.edit().putString("pref_audio_mode", mode.name).apply()
         syncServiceCompanionValues()
     }
 
+    // Legacy compatibility wrappers — kept so existing code compiles but delegate to setAudioMode
+    fun toggleVoice() {
+        setAudioMode(if (_audioMode.value == AudioMode.VOICE) AudioMode.NONE else AudioMode.VOICE)
+    }
+
     fun toggleAudio() {
-        val next = !_isAudioEnabled.value
-        _isAudioEnabled.value = next
-        sharedPrefs.edit().putBoolean("pref_is_audio_enabled", next).apply()
-        syncServiceCompanionValues()
+        setAudioMode(if (_audioMode.value == AudioMode.BEEP) AudioMode.NONE else AudioMode.BEEP)
+    }
+
+    /** Session-only mute toggle — does NOT change the persisted audio mode. */
+    fun toggleSessionMute() {
+        _isSessionMuted.value = !_isSessionMuted.value
+        WalkingForegroundService.isSessionMuted = _isSessionMuted.value
+    }
+
+    fun resetSessionMute() {
+        _isSessionMuted.value = false
+        WalkingForegroundService.isSessionMuted = false
     }
 
     fun toggleLanguage() {

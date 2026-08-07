@@ -13,7 +13,7 @@ android {
     applicationId = "com.premkumar.jiwtracker"
     minSdk = 26
     targetSdk = 36
-    versionCode = 6
+    versionCode = 7
     versionName = (project.findProperty("versionName") as String?) ?: "2.2.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

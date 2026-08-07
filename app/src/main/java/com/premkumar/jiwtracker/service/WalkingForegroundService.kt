@@ -20,6 +20,9 @@ import com.premkumar.jiwtracker.data.WalkingSession
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.SoundPool
 import java.util.*
 
 data class CompletedSessionData(
@@ -63,6 +66,8 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
         var selectedCycles: Int = 5
         var isVoiceEnabled: Boolean = true
         var isAudioEnabled: Boolean = true
+        var audioModeName: String = "VOICE" // "VOICE", "BEEP", or "NONE"
+        var isSessionMuted: Boolean = false  // Session-only mute, reset on new session
         var userWeightKg: Float = 70f
         var presetName: String = "Standard Session"
         var isJpLanguage: Boolean = false // Track app language
@@ -88,7 +93,7 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
     }
 
     enum class Phase {
-        SLOW, FAST
+        PREPARE, SLOW, FAST
     }
 
     private var serviceJob = Job()
@@ -129,6 +134,55 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
     private val activityRecognitionManager: IActivityRecognitionManager = ActivityRecognitionProvider.create()
     private var activeDurationSeconds = 0
 
+    // Low-latency SoundPool audio setup loading bip.wav and beep.wav
+    private var soundPool: SoundPool? = null
+    private var bipSoundId: Int = 0
+    private var beepSoundId: Int = 0
+
+    /** Play a short high-pitched "bip" for countdown warnings (3, 2, 1s). */
+    private fun playBip() {
+        if (isSessionMuted) return
+        if (audioModeName != "BEEP") return
+        try {
+            if (bipSoundId != 0) {
+                soundPool?.play(bipSoundId, 0.6f, 0.6f, 1, 0, 1.0f)
+            }
+        } catch (e: Throwable) { e.printStackTrace() }
+    }
+
+    /** Play a longer standard single "beep" at segment completion (0s). */
+    private fun playBeep() {
+        if (isSessionMuted) return
+        if (audioModeName != "BEEP") return
+        try {
+            if (beepSoundId != 0) {
+                soundPool?.play(beepSoundId, 0.7f, 0.7f, 1, 0, 1.0f)
+            }
+        } catch (e: Throwable) { e.printStackTrace() }
+    }
+
+    /** Play a distinct normal start beep at the beginning of the first segment. */
+    private fun playStartBeep() {
+        if (isSessionMuted) return
+        if (audioModeName != "BEEP") return
+        try {
+            if (beepSoundId != 0) {
+                soundPool?.play(beepSoundId, 0.7f, 0.7f, 1, 0, 1.0f)
+            }
+        } catch (e: Throwable) { e.printStackTrace() }
+    }
+
+    /** Play a short tick during the PREPARE countdown (beep mode). */
+    private fun playPrepareTick() {
+        if (isSessionMuted) return
+        if (audioModeName != "BEEP") return
+        try {
+            if (bipSoundId != 0) {
+                soundPool?.play(bipSoundId, 0.4f, 0.4f, 1, 0, 1.0f)
+            }
+        } catch (e: Throwable) { e.printStackTrace() }
+    }
+
     fun hasActivityRecognitionPermission(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             return androidx.core.content.ContextCompat.checkSelfPermission(
@@ -150,6 +204,25 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
         } catch (e: Throwable) {
             e.printStackTrace()
             tts = null
+        }
+
+        // Initialize low-latency SoundPool for audio cues (bip.wav / beep.wav)
+        try {
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build()
+
+            soundPool = SoundPool.Builder()
+                .setMaxStreams(4)
+                .setAudioAttributes(audioAttributes)
+                .build()
+
+            bipSoundId = soundPool?.load(this, R.raw.bip, 1) ?: 0
+            beepSoundId = soundPool?.load(this, R.raw.beep, 1) ?: 0
+        } catch (e: Throwable) {
+            e.printStackTrace()
+            soundPool = null
         }
     }
 
@@ -218,12 +291,12 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
 
         val wasIdle = _currentState.value is ServiceState.Idle
         if (wasIdle) {
-            // New Session begins
+            // New Session begins with a 5-second PREPARE countdown
             activeState = ServiceState.Active(
                 isRunning = true,
-                currentPhase = Phase.SLOW,
-                timeLeftInPhaseSeconds = slowDurationMinutes * 60,
-                phaseDurationTotalSeconds = slowDurationMinutes * 60,
+                currentPhase = Phase.PREPARE,
+                timeLeftInPhaseSeconds = 5,
+                phaseDurationTotalSeconds = 5,
                 elapsedTotalSeconds = 0,
                 currentCycle = 1,
                 totalCycles = selectedCycles,
@@ -240,7 +313,13 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
             synchronized(stepTimeTracker) {
                 stepTimeTracker.clear()
             }
-            speakCue("Starting walking session. Pace yourselves, three minutes slow walk begins.")
+
+            // Audio for the PREPARE phase depends on the active mode:
+            when (audioModeName) {
+                "VOICE" -> speakCue("Prepare for your session. Stretch out, take a deep breath.")
+                "BEEP" -> playPrepareTick() // First tick; subsequent ticks happen in tickOneSecond
+                // "NONE" -> no audio
+            }
         } else {
             // Resume Session
             activeState = activeState.copy(isRunning = true)
@@ -384,6 +463,44 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
     }
 
     private fun tickOneSecond() {
+        // ---- PREPARE phase countdown ----
+        if (activeState.currentPhase == Phase.PREPARE) {
+            val nextTimeLeft = activeState.timeLeftInPhaseSeconds - 1
+
+            if (nextTimeLeft > 0) {
+                // Still counting down
+                if (audioModeName == "BEEP") playPrepareTick()
+                activeState = activeState.copy(timeLeftInPhaseSeconds = nextTimeLeft)
+                _currentState.value = activeState
+                updateNotification(activeState)
+                return
+            }
+
+            // PREPARE finished → transition to the first SLOW segment
+            val slowDurationSec = slowDurationMinutes * 60
+            activeState = activeState.copy(
+                currentPhase = Phase.SLOW,
+                timeLeftInPhaseSeconds = slowDurationSec,
+                phaseDurationTotalSeconds = slowDurationSec
+            )
+
+            // Audio for session start
+            when (audioModeName) {
+                "VOICE" -> {
+                    // Two sequential TTS events: "Session started" then slow walk cue
+                    speakCue("Session started.")
+                    speakCueQueued("Slow walk begins. Pace yourself comfortably.")
+                }
+                "BEEP" -> playStartBeep()
+                // "NONE" -> no audio
+            }
+
+            _currentState.value = activeState
+            updateNotification(activeState)
+            return
+        }
+
+        // ---- Normal SLOW / FAST phase tick ----
         val nextElapsed = activeState.elapsedTotalSeconds + 1
         var nextTimeLeft = activeState.timeLeftInPhaseSeconds - 1
         var nextCycle = activeState.currentCycle
@@ -442,18 +559,33 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
 
         lastCalculationStepCount = nextSteps
 
+        // ---- Beep cue pattern: bip at 3, 2, 1 seconds remaining; beep at 0 ----
+        if (audioModeName == "BEEP" && !isSessionMuted) {
+            val phaseDuration = activeState.phaseDurationTotalSeconds
+            if (phaseDuration >= 3) {
+                // nextTimeLeft is the time left AFTER this tick
+                when (nextTimeLeft) {
+                    3, 2, 1 -> playBip()
+                    // beep at 0 is handled in the transition block below
+                }
+            }
+            // Edge case: segment < 3 seconds — skip bip pattern, only beep at end
+        }
+
         if (nextTimeLeft <= 0) {
             // Current Interval Completed!
             if (activeState.currentPhase == Phase.SLOW) {
                 slowCompleted++
                 nextPhase = Phase.FAST
                 nextTimeLeft = fastDurationMinutes * 60
-                speakCue("Slow interval complete. Speed up! Three minutes fast walk starts now.")
+                if (audioModeName == "BEEP" && !isSessionMuted) playBeep()
+                speakCue("Slow interval complete. Speed up! Fast walk starts now.")
             } else {
                 fastCompleted++
                 nextCycle++
                 if (nextCycle > activeState.totalCycles) {
                     // Entire Workout Session Finished!
+                    if (audioModeName == "BEEP" && !isSessionMuted) playBeep()
                     activeState = activeState.copy(
                         elapsedTotalSeconds = nextElapsed,
                         timeLeftInPhaseSeconds = 0,
@@ -467,6 +599,7 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
                     stopSession(saveToDb = true)
                     return
                 } else {
+                    if (audioModeName == "BEEP" && !isSessionMuted) playBeep()
                     nextPhase = Phase.SLOW
                     nextTimeLeft = slowDurationMinutes * 60
                     speakCue("Fast interval complete. Slow down! Walk comfortably for recovery.")
@@ -493,6 +626,9 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
     }
 
     private fun transitionInterval() {
+        // Skip is a no-op during the PREPARE countdown
+        if (activeState.currentPhase == Phase.PREPARE) return
+
         var nextCycle = activeState.currentCycle
         var nextPhase = activeState.currentPhase
         var nextTimeLeft = activeState.timeLeftInPhaseSeconds
@@ -510,11 +646,13 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
             slowCompleted++
             nextPhase = Phase.FAST
             nextTimeLeft = fastDurationMinutes * 60
-            speakCue("Slow interval complete. Speed up! Three minutes fast walk starts now.")
+            if (audioModeName == "BEEP" && !isSessionMuted) playBeep()
+            speakCue("Slow interval complete. Speed up! Fast walk starts now.")
         } else {
             fastCompleted++
             nextCycle++
             if (nextCycle > activeState.totalCycles) {
+                if (audioModeName == "BEEP" && !isSessionMuted) playBeep()
                 activeState = activeState.copy(
                     elapsedTotalSeconds = nextElapsed,
                     timeLeftInPhaseSeconds = 0,
@@ -528,6 +666,7 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
                 stopSession(saveToDb = true)
                 return
             }
+            if (audioModeName == "BEEP" && !isSessionMuted) playBeep()
             nextPhase = Phase.SLOW
             nextTimeLeft = slowDurationMinutes * 60
             speakCue("Fast interval complete. Slow down! Walk comfortably for recovery.")
@@ -549,7 +688,7 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
     }
 
     private fun speakCue(text: String) {
-        if (!isVoiceEnabled || !isTtsInitialized) return
+        if (!isVoiceEnabled || isSessionMuted || !isTtsInitialized) return
         val textToSpeak = if (isJpLanguage) {
             translateToJapanese(text)
         } else {
@@ -562,13 +701,31 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
         }
     }
 
+    /** Speak a TTS cue queued AFTER any currently playing cue (for sequential announcements). */
+    private fun speakCueQueued(text: String) {
+        if (!isVoiceEnabled || isSessionMuted || !isTtsInitialized) return
+        val textToSpeak = if (isJpLanguage) {
+            translateToJapanese(text)
+        } else {
+            text
+        }
+        try {
+            tts?.speak(textToSpeak, TextToSpeech.QUEUE_ADD, null, "WalkingServiceCueQueued")
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
+    }
+
     private fun translateToJapanese(englishText: String): String {
         return when {
+            englishText.contains("Prepare for your session") -> "セッション準備開始。ストレッチをして、深呼吸してください。"
+            englishText.contains("Session started") && !englishText.contains("completed") -> "セッション開始！"
+            englishText.contains("Slow walk begins") -> "ゆっくり歩きを始めましょう。マイペースで歩いてください。"
             englishText.contains("Starting") -> "インターバルトレーニングを開始します。最初はマイペースでゆっくり3分間歩きましょう。"
             englishText.contains("Resuming") -> "トレーニングを再開します。"
             englishText.contains("paused") -> "一時停止しました。"
             englishText.contains("Next interval") -> "次の区間へ移行します。"
-            englishText.contains("Slow interval complete") -> "ゆっくり歩き終了です。ギヤを上げて、3分間の早歩きを始めましょう！"
+            englishText.contains("Slow interval complete") -> "ゆっくり歩き終了です。ギヤを上げて、早歩きを始めましょう！"
             englishText.contains("Fast interval complete") -> "早歩きが終了しました。息を整えながら、ゆっくりマイペースで歩きましょう。"
             englishText.contains("Session completed") -> "セッションが自動完了しました。お疲れ様でした。"
             englishText.contains("Workout completed") -> "お疲れ様でした！インターバルトレーニングが完了しました。素晴らしい運動量です。"
@@ -604,10 +761,10 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
         )
 
         val durationLabel = formatTimerTime(state.timeLeftInPhaseSeconds)
-        val phaseLabelText = if (state.currentPhase == Phase.FAST) {
-            if (isJpLanguage) "早歩き区間 (FAST)" else "FAST BURN PHASE"
-        } else {
-            if (isJpLanguage) "ゆっくり区間 (SLOW)" else "SLOW RECOVERY PHASE"
+        val phaseLabelText = when (state.currentPhase) {
+            Phase.PREPARE -> if (isJpLanguage) "準備中" else "PREPARE"
+            Phase.FAST -> if (isJpLanguage) "早歩き区間 (FAST)" else "FAST BURN PHASE"
+            Phase.SLOW -> if (isJpLanguage) "ゆっくり区間 (SLOW)" else "SLOW RECOVERY PHASE"
         }
 
         val progressMax = state.phaseDurationTotalSeconds
@@ -731,6 +888,14 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
         try {
             tts?.stop()
             tts?.shutdown()
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
+
+        // Release SoundPool resources
+        try {
+            soundPool?.release()
+            soundPool = null
         } catch (e: Throwable) {
             e.printStackTrace()
         }

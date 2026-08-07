@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -67,6 +68,7 @@ import com.premkumar.jiwtracker.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
 import com.premkumar.jiwtracker.data.JIWConfig
+import com.premkumar.jiwtracker.ui.AudioMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -1731,6 +1733,7 @@ fun SettingsTabScreen(
     
     val voiceEnabled by viewModel.isVoiceEnabled.collectAsStateWithLifecycle()
     val audioEnabled by viewModel.isAudioEnabled.collectAsStateWithLifecycle()
+    val currentAudioMode by viewModel.audioMode.collectAsStateWithLifecycle()
     
     val customSlow by viewModel.customSlowMinutes.collectAsStateWithLifecycle()
     val customFast by viewModel.customFastMinutes.collectAsStateWithLifecycle()
@@ -2111,7 +2114,7 @@ fun SettingsTabScreen(
             }
         }
 
-        // Vocal TTS Coaches toggles Screen
+        // Audio Mode Selector — mutually exclusive (Voice / Beep / None)
         item {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -2127,21 +2130,67 @@ fun SettingsTabScreen(
                         color = MaterialTheme.colorScheme.primary,
                         letterSpacing = 1.sp
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (isJp) "インターバル切り替え時のフィードバック方法を選択" else "Choose how you receive interval transition feedback",
+                        fontSize = 10.sp,
+                        color = TextMutedGrey,
+                        lineHeight = 14.sp
+                    )
                     Spacer(modifier = Modifier.height(14.dp))
-                    
-                    ToggleConfigRow(
-                        title = if (isJp) "リアルタイムTTSボイスアシスト" else "Real-time Voice Assistant (TTS)",
-                        desc = if (isJp) "「早歩き！」「ゆっくり！」など交代の指示を音声化" else "Speak vocal speed instructions on interval transitions",
-                        checked = voiceEnabled,
-                        onCheckChange = { viewModel.toggleVoice() }
+
+                    val options = listOf(
+                        Triple(AudioMode.VOICE, if (isJp) "音声ガイド (TTS)" else "Voice Cues", if (isJp) "「早歩き！」などの音声アシスト" else "Spoken pace instructions via TTS"),
+                        Triple(AudioMode.BEEP, if (isJp) "ビープ音" else "Beep Cues", if (isJp) "区間の切り替わりにビープを鳴らす" else "Acoustic beeps on phase completions"),
+                        Triple(AudioMode.NONE, if (isJp) "なし" else "None", if (isJp) "音声フィードバックなし" else "No audio feedback")
                     )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 1.dp, modifier = Modifier.padding(vertical = 12.dp))
-                    ToggleConfigRow(
-                        title = if (isJp) "ピピッという電子音アラート" else "Sound Beep Cues",
-                        desc = if (isJp) "区間の切り替わり寸前にブザーでチャイムを鳴らす" else "Trigger high acoustic bleeps on phase completions",
-                        checked = audioEnabled,
-                        onCheckChange = { viewModel.toggleAudio() }
-                    )
+
+                    options.forEachIndexed { index, (mode, title, desc) ->
+                        val isSelected = currentAudioMode == mode
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                                    else Color.Transparent
+                                )
+                                .clickable { viewModel.setAudioMode(mode) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { viewModel.setAudioMode(mode) },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = MaterialTheme.colorScheme.primary,
+                                    unselectedColor = TextMutedGrey
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = title,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onSurface else TextMutedGrey
+                                )
+                                Text(
+                                    text = desc,
+                                    fontSize = 10.sp,
+                                    color = TextMutedGrey,
+                                    lineHeight = 14.sp
+                                )
+                            }
+                        }
+                        if (index < options.lastIndex) {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outline,
+                                thickness = 1.dp,
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -2837,22 +2886,24 @@ fun TrackingHudView(
     windowSizeClass: androidx.compose.material3.windowsizeclass.WindowSizeClass
 ) {
     val context = LocalContext.current
-    val voiceEnabled by viewModel.isVoiceEnabled.collectAsStateWithLifecycle()
+    val currentAudioMode by viewModel.audioMode.collectAsStateWithLifecycle()
+    val isSessionMuted by viewModel.isSessionMuted.collectAsStateWithLifecycle()
     val totalInPhase = state.phaseDurationTotalSeconds
     val timeLeft = state.timeLeftInPhaseSeconds
     val percentTimeFraction = if (totalInPhase > 0) timeLeft.toFloat() / totalInPhase.toFloat() else 1f
 
     val isLightMode = MaterialTheme.colorScheme.background != Color(0xFF0F0F0F)
+    val isPhasePrepare = state.currentPhase == WalkingForegroundService.Phase.PREPARE
     val isPhaseFast = state.currentPhase == WalkingForegroundService.Phase.FAST
-    val phaseColorAccent = if (isPhaseFast) {
-        if (isLightMode) MaterialTheme.colorScheme.tertiary else LaserCrimson
-    } else {
-        MaterialTheme.colorScheme.secondary
+    val phaseColorAccent = when {
+        isPhasePrepare -> if (isLightMode) SystemWarning else WarmGold
+        isPhaseFast -> if (isLightMode) MaterialTheme.colorScheme.tertiary else LaserCrimson
+        else -> MaterialTheme.colorScheme.secondary
     }
-    val phaseThemeBg = if (isLightMode) {
-        if (isPhaseFast) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
-    } else {
-        if (isPhaseFast) Color(0xFF1E0B0F) else Color(0xFF071C22)
+    val phaseThemeBg = when {
+        isPhasePrepare -> if (isLightMode) Color(0xFFFFF8E1) else Color(0xFF1C1800)
+        isLightMode -> if (isPhaseFast) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
+        else -> if (isPhaseFast) Color(0xFF1E0B0F) else Color(0xFF071C22)
     }
 
     // M3 adaptive sizing: scale the hero ring and constrain content width on wider viewports.
@@ -2881,20 +2932,17 @@ fun TrackingHudView(
         label = "pulseAlpha"
     )
 
-    val displayedName = if (isPhaseFast) {
-        if (isJp) "早歩き" else "FAST WALK"
-    } else {
-        if (isJp) "ゆっくり歩き" else "SLOW RECOVERY"
+    val displayedName = when {
+        isPhasePrepare -> if (isJp) "準備" else "PREPARE"
+        isPhaseFast -> if (isJp) "早歩き" else "FAST WALK"
+        else -> if (isJp) "ゆっくり歩き" else "SLOW RECOVERY"
     }
 
-    val actionHintText = if (isFinalStretch) {
-        if (isJp) "ラストスパート！あと少し！" else "Final stretch — almost there!"
-    } else {
-        if (isPhaseFast) {
-            if (isJp) "全力を振り絞って大きく腕を振ろう！" else "MAX EFFORT · SWING ARMS BACKWARD!"
-        } else {
-            if (isJp) "呼吸を整えてリラックス歩き" else "DEEP NASAL BREATH · EASY STEPS"
-        }
+    val actionHintText = when {
+        isPhasePrepare -> if (isJp) "ストレッチして準備しましょう" else "STRETCH & GET READY"
+        isFinalStretch -> if (isJp) "ラストスパート！あと少し！" else "Final stretch — almost there!"
+        isPhaseFast -> if (isJp) "全力を振り絞って大きく腕を振ろう！" else "MAX EFFORT · SWING ARMS BACKWARD!"
+        else -> if (isJp) "呼吸を整えてリラックス歩き" else "DEEP NASAL BREATH · EASY STEPS"
     }
 
     Column(
@@ -3047,30 +3095,43 @@ fun TrackingHudView(
             // Guaranteed breathing room so the voice badge is never clipped when space is tight.
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (voiceEnabled) {
+            if (currentAudioMode != AudioMode.NONE) {
+                val pillLabel = when {
+                    currentAudioMode == AudioMode.VOICE && !isSessionMuted -> if (isJp) "音声ガイド有効" else "VOICE PROMPT ACTIVE"
+                    currentAudioMode == AudioMode.VOICE && isSessionMuted -> if (isJp) "音声ガイドOFF" else "VOICE PROMPT MUTED"
+                    currentAudioMode == AudioMode.BEEP && !isSessionMuted -> if (isJp) "ビープ音有効" else "BEEP CUES ACTIVE"
+                    currentAudioMode == AudioMode.BEEP && isSessionMuted -> if (isJp) "ビープ音OFF" else "BEEP CUES MUTED"
+                    else -> ""
+                }
+                val pillIcon = if (isSessionMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp
+                val pillTint = if (isSessionMuted) TextMutedGrey else MaterialTheme.colorScheme.primary
+                val pillBgAlpha = if (isSessionMuted) 0.05f else 0.1f
+                val pillBorderAlpha = if (isSessionMuted) 0.12f else 0.25f
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                        .background(pillTint.copy(alpha = pillBgAlpha))
                         .border(
                             width = 1.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                            color = pillTint.copy(alpha = pillBorderAlpha),
                             shape = Corners.card
                         )
+                        .clickable { viewModel.toggleSessionMute() }
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                        contentDescription = "Voice Prompt Active badge",
-                        tint = MaterialTheme.colorScheme.primary,
+                        imageVector = pillIcon,
+                        contentDescription = if (isSessionMuted) "Audio muted" else "Audio active",
+                        tint = pillTint,
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isJp) "音声ガイド有効" else "VOICE PROMPT ACTIVE",
-                        color = MaterialTheme.colorScheme.primary,
+                        text = pillLabel,
+                        color = pillTint,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         letterSpacing = 0.5.sp
