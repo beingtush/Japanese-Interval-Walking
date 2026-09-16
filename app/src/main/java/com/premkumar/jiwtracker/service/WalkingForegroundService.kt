@@ -197,6 +197,9 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
         super.onCreate()
         createNotificationChannel()
         setupWakeLock()
+
+        // Mirror this session to the paired watch. Safe no-op when none is paired.
+        WatchBridge.start(this)
         
         // Initialize TTS
         try {
@@ -875,6 +878,9 @@ class WalkingForegroundService : Service(), SensorEventListener, TextToSpeech.On
 
     override fun onDestroy() {
         stopTicker()
+
+        // Clear the watch display so it cannot keep showing a stale countdown.
+        WatchBridge.stop(this)
         try {
             if (wakeLock?.isHeld == true) {
                 wakeLock?.release()

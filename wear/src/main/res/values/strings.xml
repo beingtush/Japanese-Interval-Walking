@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">JIW Tracker</string>
+    <string name="no_session_title">No active session</string>
+    <string name="no_session_body">Start a walk on your phone.</string>
+    <string name="not_connected">Phone not connected</string>
+    <string name="phase_prepare">GET READY</string>
+    <string name="phase_slow">SLOW</string>
+    <string name="phase_fast">FAST</string>
+    <string name="phase_finished">DONE</string>
+    <string name="paused">PAUSED</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_resume">Resume</string>
+    <string name="action_skip">Skip</string>
+    <string name="action_stop">Stop</string>
+    <string name="session_channel_name">Walking session</string>
+</resources>

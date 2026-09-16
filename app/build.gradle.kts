@@ -64,6 +64,10 @@ android {
       }
     }
     debug {
+      // Keeps debug builds off the release app's package so a sideloaded release build and its
+      // session history survive. The wear module applies the SAME suffix: the Data Layer pairs
+      // phone and watch by package name, so both halves must move together.
+      applicationIdSuffix = ".debug"
     }
   }
   compileOptions {
@@ -117,6 +121,10 @@ dependencies {
   implementation(libs.converter.moshi)
   implementation(libs.kotlinx.coroutines.android)
   implementation(libs.kotlinx.coroutines.core)
+  // Watch companion: standard flavor only. `:wear-protocol` exposes play-services-wearable,
+  // and the fdroid flavor must stay free of Google Play services.
+  "standardImplementation"(libs.kotlinx.coroutines.play.services)
+  "standardImplementation"(project(":wear-protocol"))
   implementation(libs.logging.interceptor)
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)

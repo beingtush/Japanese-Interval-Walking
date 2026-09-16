@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:name="android.hardware.type.watch" android:required="true" />
+
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!--
+      specialUse, not health. The `health` FGS type additionally requires a granted sensor
+      permission (BODY_SENSORS / ACTIVITY_RECOGNITION / HIGH_SAMPLING_RATE_SENSORS), and this
+      app reads no sensors at all - the phone does all the measuring.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.JIWWear">
+
+        <!--
+          Declares this app as usable without the phone app being launched first. The session
+          itself still originates on the phone; this only stops the system from advertising a
+          "install on phone" flow for a watch app that is already installed there.
+        -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="false" />
+
+        <activity
+            android:name=".presentation.MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:theme="@style/Theme.JIWWear">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Keeps phase haptics firing and the Ongoing Activity visible with the screen off. -->
+        <service
+            android:name=".WatchSessionService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Mirrors an interval-walking session running on the paired phone: fires phase-change haptics and keeps the Ongoing Activity visible while the watch screen is off. Reads no sensors and collects no data of its own." />
+        </service>
+
+        <!-- Receives session snapshots pushed by the phone. -->
+        <service
+            android:name=".WatchDataListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/jiw/session" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

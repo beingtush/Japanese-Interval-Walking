@@ -76,7 +76,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleRelease :app:bundleRelease -PversionName=${{ steps.version.outputs.version }}
+          ./gradlew :app:assembleRelease :app:bundleRelease :wear:assembleRelease -PversionName=${{ steps.version.outputs.version }}
 
       - name: List build output files
         if: steps.version.outputs.release_needed == 'true'
@@ -85,6 +85,8 @@ jobs:
           find app/build/outputs/apk/ -type f || true
           echo "=== AAB Outputs ==="
           find app/build/outputs/bundle/ -type f || true
+          echo "=== Wear APK Outputs ==="
+          find wear/build/outputs/apk/ -type f || true
 
       - name: Run semantic-release
         if: steps.version.outputs.release_needed == 'true'
